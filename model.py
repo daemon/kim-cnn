@@ -39,6 +39,11 @@ class SingleChannelWordModel(nn.Module):
         if static:
             self.embedding.weight.requires_grad = False
 
+    @classmethod
+    def make_random_model(cls, id_dict, dim=300):
+        weights = np.random.rand(len(id_dict), dim) * 2 - 1
+        return cls(id_dict, weights, static=False)
+
     def forward(self, x):
         batch = self.embedding(x)
         return batch.unsqueeze(1)

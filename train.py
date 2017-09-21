@@ -26,7 +26,7 @@ def load_embed_data(dirname="data", weights_file="embed_weights.npy", id_file="w
 
 def main():
     torch.cuda.set_device(1)
-    word_model = model.SingleChannelWordModel(*load_embed_data(), static=False)
+    word_model = model.SingleChannelWordModel.make_random_model(load_embed_data()[0])
     word_model.cuda()
     kcnn = model.KimCNN(word_model)
     kcnn.cuda()
