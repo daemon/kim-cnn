@@ -19,14 +19,24 @@ def load_sst_sets(dirname="data", fmt="stsa.fine.{}.tsv"):
 def load_embed_data(dirname="data", weights_file="embed_weights.npy", id_file="word_id.dat"):
     id_file = os.path.join(dirname, id_file)
     weights_file = os.path.join(dirname, weights_file)
+    train_file = os.path.join(dirname, "stsa.fine.phrases.train.tsv")
     with open(id_file, "rb") as f:
         id_dict = pickle.load(f)
     with open(weights_file, "rb") as f:
         weights = np.load(f)
-    return (id_dict, weights)
+    unk_vocab = set()
+    unk_vocab_list = []
+    with open(train_file) as f:
+        for line in f.readlines():
+            words = line.split("\t")[1].replace("\n", "").split()
+            for word in words:
+                if word not in id_dict and word not in unk_vocab:
+                    unk_vocab.add(word)
+                    unk_vocab_list.append(word)
+    return (id_dict, weights, unk_vocab_list)
 
 def clip_weights(parameter, s=3):
-    norm = abs(parameter.weight.data.norm())
+    norm = parameter.weight.data.norm()
     if norm < s:
         return
     parameter.weight.data.mul_(s / norm)
@@ -41,7 +51,10 @@ def convert_dataset(model, dataset):
 
 def main():
     torch.cuda.set_device(1)
-    word_model = model.SingleChannelWordModel.make_random_model(load_embed_data()[0])
+    id_dict, weights, unk_vocab_list = load_embed_data()
+    #word_model = model.SingleChannelWordModel(id_dict, weights, unk_vocab_list)
+    word_model = model.SingleChannelWordModel.make_random_model(id_dict, unk_vocab_list)
+    #word_model = model.MultiChannelWordModel(id_dict, weights, unk_vocab_list)
     word_model.cuda()
     kcnn = model.KimCNN(word_model)
     kcnn.cuda()
@@ -68,14 +81,14 @@ def main():
                 clip_weights(conv_layer)
             i += mbatch_size
 
-            if i % 10000 == 0:
+            if i % 3000 == 0:
                 kcnn.eval()
                 dev_in, dev_out = convert_dataset(kcnn, dev_set)
                 scores = kcnn(dev_in)
                 n_correct = (torch.max(scores, 1)[1].view(len(dev_set)).data == dev_out.data).sum()
                 accuracy = n_correct / len(dev_set)
                 print("Dev set accuracy: {}".format(accuracy))
-                if accuracy > 0.45:
+                if accuracy > 0.46:
                     test_in, test_out = convert_dataset(kcnn, test_set)
                     scores = kcnn(test_in)
                     n_correct = (torch.max(scores, 1)[1].view(len(test_set)).data == test_out.data).sum()

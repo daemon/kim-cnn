@@ -30,11 +30,11 @@ class KimCNN(nn.Module):
         return self.fc(x)
 
 class MultiChannelWordModel(nn.Module):
-    def __init__(self, id_dict, weights):
+    def __init__(self, id_dict, weights, unknown_vocab=[]):
         super().__init__()
         self.n_channels = 2
-        self.static_model = SingleChannelWordModel(id_dict, weights)
-        self.non_static_model = SingleChannelWordModel(id_dict, weights, static=False)
+        self.non_static_model = SingleChannelWordModel(id_dict, weights, unknown_vocab, static=False)
+        self.static_model = SingleChannelWordModel(id_dict, self.non_static_model.weights)
         self.dim = self.static_model.dim
 
     def forward(self, x):
@@ -46,21 +46,26 @@ class MultiChannelWordModel(nn.Module):
         return self.static_model.lookup(sentences)
 
 class SingleChannelWordModel(nn.Module):
-    def __init__(self, id_dict, weights, static=True):
+    def __init__(self, id_dict, weights, unknown_vocab=[], static=True):
         super().__init__()
-        vocab_size = len(id_dict)
+        vocab_size = len(id_dict) + len(unknown_vocab)
         self.n_channels = 1
         self.lookup_table = id_dict
-        self.dim = weights.shape[1]
+        last_id = max(id_dict.values())
+        for word in unknown_vocab:
+            last_id += 1
+            self.lookup_table[word] = last_id
+        self.weights = np.concatenate((weights, np.random.rand(len(unknown_vocab), 300) - 0.5))
+        self.dim = self.weights.shape[1]
         self.embedding = nn.Embedding(vocab_size, self.dim, padding_idx=2)
-        self.embedding.weight.data.copy_(torch.from_numpy(weights))
+        self.embedding.weight.data.copy_(torch.from_numpy(self.weights))
         if static:
             self.embedding.weight.requires_grad = False
 
     @classmethod
-    def make_random_model(cls, id_dict, dim=300):
+    def make_random_model(cls, id_dict, unknown_vocab=[], dim=300):
         weights = np.random.rand(len(id_dict), dim) - 0.5
-        return cls(id_dict, weights, static=False)
+        return cls(id_dict, weights, unknown_vocab, static=False)
 
     def forward(self, x):
         batch = self.embedding(x)

@@ -1,5 +1,5 @@
 method,best dev accuracy,test accuracy
-rand,45.0,43.9
-static,47.5,45.0
-non-static,48.5,47.4
+rand,46.1,44.0
+static,47.2,46.3
+non-static,48.4,47.7
 multichannel,47.5,46.8
