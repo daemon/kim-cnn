@@ -15,7 +15,7 @@ class KimCNN(nn.Module):
         self.conv_layers = [nn.Conv2d(n_c, n_fmaps, (w, embedding_dim), padding=(w - 1, 0)) for w in weight_lengths]
         for i, conv in enumerate(self.conv_layers):
             self.add_module("conv{}".format(i), conv)
-        self.dropout = nn.Dropout(config.get("dropout", 0.3))
+        self.dropout = nn.Dropout(config.get("dropout", 0.5))
         self.fc = nn.Linear(len(self.conv_layers) * n_fmaps, config.get("n_labels", 5))
 
     def preprocess(self, sentences):
@@ -45,7 +45,6 @@ class MultiChannelWordModel(nn.Module):
     def lookup(self, sentences):
         return self.static_model.lookup(sentences)        
 
-
 class SingleChannelWordModel(nn.Module):
     def __init__(self, id_dict, weights, static=True):
         super().__init__()
@@ -53,7 +52,7 @@ class SingleChannelWordModel(nn.Module):
         self.n_channels = 1
         self.lookup_table = id_dict
         self.dim = weights.shape[1]
-        self.embedding = nn.Embedding(vocab_size, self.dim, padding_idx=2) # pytorch 0.1x bug
+        self.embedding = nn.Embedding(vocab_size, self.dim, padding_idx=2)
         self.embedding.weight.data.copy_(torch.from_numpy(weights))
         if static:
             self.embedding.weight.requires_grad = False
