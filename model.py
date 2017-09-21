@@ -28,24 +28,16 @@ class KimCNN(nn.Module):
         x = self.dropout(x)
         return self.fc(x)
 
-class StaticWordModel(nn.Module):
-    def __init__(self, spacy_nlp, unknown_vocab=[], dim=300):
+class SingleChannelWordModel(nn.Module):
+    def __init__(self, id_dict, weights, static=True):
         super().__init__()
-        known_vocab = spacy_nlp.vocab
-        self._spacy = spacy_nlp
-        vocab_size = len(known_vocab) + len(unknown_vocab)
-        self.lookup_table = {}
-        self.dim = dim
-        self.embedding = nn.Embedding(vocab_size, dim, padding_idx=0)
-        weights = np.empty((vocab_size, dim))
-        for i, word in enumerate(known_vocab):
-            self.lookup_table[word.orth_] = i
-            weights[i, :] = word.vector
-        for i, word in enumerate(unknown_vocab):
-            self.lookup_table[word.text] = i
-            weights[len(known_vocab) + i, :] = np.random.random(dim) * 2 - 1
+        vocab_size = len(id_dict)
+        self.lookup_table = id_dict
+        self.dim = weights.shape[1]
+        self.embedding = nn.Embedding(vocab_size, self.dim, padding_idx=2) # pytorch 0.1x bug
         self.embedding.weight.data.copy_(torch.from_numpy(weights))
-        self.embedding.weight.requires_grad = False
+        if static:
+            self.embedding.weight.requires_grad = False
 
     def forward(self, x):
         batch = self.embedding(x)
@@ -56,9 +48,9 @@ class StaticWordModel(nn.Module):
         max_len = 0
         for sentence in sentences:
             indices = []
-            for word in self._spacy.tokenizer(str(sentence)):
+            for word in str(sentence).split():
                 try:
-                    index = self.lookup_table[word.orth_]
+                    index = self.lookup_table[word]
                     indices.append(index)
                 except KeyError:
                     continue
@@ -66,6 +58,6 @@ class StaticWordModel(nn.Module):
             if len(indices) > max_len:
                 max_len = len(indices)
         for indices in indices_list:
-            indices.extend([0] * (max_len - len(indices)))
+            indices.extend([2] * (max_len - len(indices)))
         return indices_list
 
