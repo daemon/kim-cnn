@@ -43,7 +43,7 @@ class MultiChannelWordModel(nn.Module):
         return torch.cat((batch1, batch2), dim=1)
 
     def lookup(self, sentences):
-        return self.static_model.lookup(sentences)        
+        return self.static_model.lookup(sentences)
 
 class SingleChannelWordModel(nn.Module):
     def __init__(self, id_dict, weights, static=True):
@@ -59,7 +59,7 @@ class SingleChannelWordModel(nn.Module):
 
     @classmethod
     def make_random_model(cls, id_dict, dim=300):
-        weights = np.random.rand(len(id_dict), dim) * 2 - 1
+        weights = np.random.rand(len(id_dict), dim) - 0.5
         return cls(id_dict, weights, static=False)
 
     def forward(self, x):

@@ -31,9 +31,17 @@ def clip_weights(parameter, s=3):
         return
     parameter.weight.data.mul_(s / norm)
 
+def convert_dataset(model, dataset):
+    model_in = dataset[:, 1].reshape(-1)
+    model_out = dataset[:, 0].flatten().astype(np.int)
+    model_out = torch.autograd.Variable(torch.from_numpy(model_out)).cuda()
+    model_in = model.preprocess(model_in)
+    model_in = torch.autograd.Variable(model_in.cuda())
+    return (model_in, model_out)
+
 def main():
     torch.cuda.set_device(1)
-    word_model = model.MultiChannelWordModel(*load_embed_data())
+    word_model = model.SingleChannelWordModel.make_random_model(load_embed_data()[0])
     word_model.cuda()
     kcnn = model.KimCNN(word_model)
     kcnn.cuda()
@@ -50,18 +58,11 @@ def main():
         i = 0
         while i + mbatch_size < len(train_set):
             mbatch = train_set[i:i + mbatch_size]
-            train_in = mbatch[:, 1].reshape(-1)
-            train_out = mbatch[:, 0].flatten().astype(np.int)
-            train_out = torch.autograd.Variable(torch.from_numpy(train_out))
-            train_in = kcnn.preprocess(train_in)
-
-            train_in = torch.autograd.Variable(train_in.cuda())
-            train_out = train_out.cuda()
+            train_in, train_out = convert_dataset(kcnn, mbatch)
 
             scores = kcnn(train_in)
             loss = criterion(scores, train_out)
             loss.backward()
-            #nn.utils.clip_grad_norm(parameters, 0.1)
             optimizer.step()
             for conv_layer in kcnn.conv_layers:
                 clip_weights(conv_layer)
@@ -69,15 +70,18 @@ def main():
 
             if i % 10000 == 0:
                 kcnn.eval()
-                dev_in = test_set[:, 1].reshape(-1)
-                dev_out = test_set[:, 0].flatten().astype(np.int)
-                dev_out = torch.autograd.Variable(torch.from_numpy(dev_out))
-                dev_in = kcnn.preprocess(dev_in)
-                dev_in = torch.autograd.Variable(dev_in.cuda())
-                dev_out = dev_out.cuda()
+                dev_in, dev_out = convert_dataset(kcnn, dev_set)
                 scores = kcnn(dev_in)
-                n_correct = (torch.max(scores, 1)[1].view(len(test_set)).data == dev_out.data).sum()
-                print("Accuracy: {}".format(n_correct / len(test_set)))
+                n_correct = (torch.max(scores, 1)[1].view(len(dev_set)).data == dev_out.data).sum()
+                accuracy = n_correct / len(dev_set)
+                print("Dev set accuracy: {}".format(accuracy))
+                if accuracy > 0.45:
+                    test_in, test_out = convert_dataset(kcnn, test_set)
+                    scores = kcnn(test_in)
+                    n_correct = (torch.max(scores, 1)[1].view(len(test_set)).data == test_out.data).sum()
+                    accuracy = n_correct / len(test_set)
+                    print("Test set accuracy: {}".format(accuracy))
+                    return
                 kcnn.train()
 
 if __name__ == "__main__":
