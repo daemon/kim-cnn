@@ -6,16 +6,17 @@ import torch.nn.functional as nn_func
 class KimCNN(nn.Module):
     def __init__(self, word_model, **config):
         super().__init__()
-        n_feat_maps = config.get("n_feature_maps", 100)
+        n_fmaps = config.get("n_feature_maps", 100)
         weight_lengths = config.get("weight_lengths", [3, 4, 5])
         embedding_dim = word_model.dim
 
         self.word_model = word_model
-        self.conv_layers = [nn.Conv2d(1, n_feat_maps, (w, embedding_dim), padding=(w - 1, 0)) for w in weight_lengths]
+        n_c = word_model.n_channels
+        self.conv_layers = [nn.Conv2d(n_c, n_fmaps, (w, embedding_dim), padding=(w - 1, 0)) for w in weight_lengths]
         for i, conv in enumerate(self.conv_layers):
             self.add_module("conv{}".format(i), conv)
         self.dropout = nn.Dropout(config.get("dropout", 0.3))
-        self.fc = nn.Linear(len(self.conv_layers) * n_feat_maps, config.get("n_labels", 5))
+        self.fc = nn.Linear(len(self.conv_layers) * n_fmaps, config.get("n_labels", 5))
 
     def preprocess(self, sentences):
         return torch.from_numpy(np.array(self.word_model.lookup(sentences)))
@@ -28,10 +29,28 @@ class KimCNN(nn.Module):
         x = self.dropout(x)
         return self.fc(x)
 
+class MultiChannelWordModel(nn.Module):
+    def __init__(self, id_dict, weights):
+        super().__init__()
+        self.n_channels = 2
+        self.static_model = SingleChannelWordModel(id_dict, weights)
+        self.non_static_model = SingleChannelWordModel(id_dict, weights, static=False)
+        self.dim = self.static_model.dim
+
+    def forward(self, x):
+        batch1 = self.static_model(x)
+        batch2 = self.non_static_model(x)
+        return torch.cat((batch1, batch2), dim=1)
+
+    def lookup(self, sentences):
+        return self.static_model.lookup(sentences)        
+
+
 class SingleChannelWordModel(nn.Module):
     def __init__(self, id_dict, weights, static=True):
         super().__init__()
         vocab_size = len(id_dict)
+        self.n_channels = 1
         self.lookup_table = id_dict
         self.dim = weights.shape[1]
         self.embedding = nn.Embedding(vocab_size, self.dim, padding_idx=2) # pytorch 0.1x bug
