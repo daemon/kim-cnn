@@ -1,7 +1,10 @@
+import random
+
 import numpy as np
 import torch
+import torch.autograd as autograd
 import torch.nn as nn
-import torch.nn.functional as nn_func
+import torch.nn.functional as F
 
 class KimCNN(nn.Module):
     def __init__(self, word_model, **config):
@@ -21,10 +24,50 @@ class KimCNN(nn.Module):
     def preprocess(self, sentences):
         return torch.from_numpy(np.array(self.word_model.lookup(sentences)))
 
+    def compute_corr_matrix(self, output):
+        grads = autograd.grad(output, self.sent_weights)
+        grads = grads[0].squeeze(0).squeeze(0)
+        # return np.cov(grads.cpu().data.numpy())
+        sz = self.sent_weights.size(2)
+        corr_matrix = np.empty((sz, sz))
+        for i, g1 in enumerate(grads):
+            for j, g2 in enumerate(grads):
+                corr_matrix[i, j] = torch.dot(g1, g2).cpu().data[0]
+        return corr_matrix
+
+    def compute_grad_norm(self, output):
+        grad_norms = autograd.grad(output, self.sent_weights, create_graph=True)
+        grad_norms = grad_norms[0].squeeze(0).squeeze(0)
+        grad_norms = [torch.sqrt(torch.sum(g**2)) for g in grad_norms]
+        return torch.cat(grad_norms).cpu().data.numpy()
+
+    def rank(self, sentence):
+        m_in = autograd.Variable(torch.Tensor(self.word_model.lookup([sentence])).long().cuda())
+        m_out = self.forward(m_in)
+        return torch.max(m_out, 1)[1], m_out
+
+    def loss(self):
+        return 0
+        def conv_sim_loss(weights, n=5):
+            weights = random.sample(weights, 2 * n)
+            weights1, weights2 = weights[:n], weights[n:]
+            loss = 0
+            tot = 0
+            for i, w1 in enumerate(weights1):
+                for j in range(i + 1, n):
+                    w2 = weights2[j]
+                    loss += compute_sim_loss(w1, w2, 5E-3)
+                    tot += 1
+            return loss / tot
+        conv_layers = [c.weight for c in self.conv_layers]
+        loss = conv_sim_loss(conv_layers[0].split(1, 0)) + conv_sim_loss(conv_layers[1].split(1, 0)) + \
+            conv_sim_loss(conv_layers[2].split(1, 0))
+        return loss
+
     def forward(self, x):
-        x = self.word_model(x) # shape: (batch, channel, sent length, embed dim)
-        x = [nn_func.relu(conv(x)).squeeze(3) for conv in self.conv_layers]
-        x = [nn_func.max_pool1d(c, c.size(2)).squeeze(2) for c in x]
+        self.sent_weights = x = self.word_model(x) # shape: (batch, channel, sent length, embed dim)
+        x = [F.relu(conv(x)).squeeze(3) for conv in self.conv_layers]
+        x = [F.max_pool1d(c, c.size(2)).squeeze(2) for c in x]
         x = torch.cat(x, 1)
         x = self.dropout(x)
         return self.fc(x)

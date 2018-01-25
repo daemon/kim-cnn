@@ -50,19 +50,21 @@ def convert_dataset(model, dataset):
     return (model_in, model_out)
 
 def main():
-    torch.cuda.set_device(1)
+    torch.cuda.set_device(0)
     id_dict, weights, unk_vocab_list = load_embed_data()
-    #word_model = model.SingleChannelWordModel(id_dict, weights, unk_vocab_list)
-    word_model = model.SingleChannelWordModel.make_random_model(id_dict, unk_vocab_list)
-    #word_model = model.MultiChannelWordModel(id_dict, weights, unk_vocab_list)
+    word_model = model.SingleChannelWordModel(id_dict, weights, unk_vocab_list, static=False)
+    # word_model = model.SingleChannelWordModel.make_random_model(id_dict, unk_vocab_list)
+    # word_model = model.MultiChannelWordModel(id_dict, weights, unk_vocab_list)
     word_model.cuda()
     kcnn = model.KimCNN(word_model)
     kcnn.cuda()
     criterion = nn.CrossEntropyLoss()
     parameters = filter(lambda p: p.requires_grad, kcnn.parameters())
     optimizer = torch.optim.Adadelta(parameters, lr=0.001, weight_decay=0.)
+    # optimizer = torch.optim.SGD(parameters, lr=0.001)
 
     train_set, dev_set, test_set = load_sst_sets()
+    best_accuracy = 0
     for epoch in range(30):
         kcnn.train()
         optimizer.zero_grad()
@@ -74,8 +76,9 @@ def main():
             train_in, train_out = convert_dataset(kcnn, mbatch)
 
             scores = kcnn(train_in)
-            loss = criterion(scores, train_out)
+            loss = criterion(scores, train_out) + kcnn.loss()
             loss.backward()
+            # print("Train set loss: {} ".format(loss.cpu().data[0]))
             optimizer.step()
             for conv_layer in kcnn.conv_layers:
                 clip_weights(conv_layer)
@@ -88,13 +91,14 @@ def main():
                 n_correct = (torch.max(scores, 1)[1].view(len(dev_set)).data == dev_out.data).sum()
                 accuracy = n_correct / len(dev_set)
                 print("Dev set accuracy: {}".format(accuracy))
-                if accuracy > 0.46:
+                if accuracy > 0.4 and accuracy > best_accuracy:
+                    best_accuracy = accuracy
                     test_in, test_out = convert_dataset(kcnn, test_set)
                     scores = kcnn(test_in)
                     n_correct = (torch.max(scores, 1)[1].view(len(test_set)).data == test_out.data).sum()
                     accuracy = n_correct / len(test_set)
+                    torch.save(kcnn, "model.pt")
                     print("Test set accuracy: {}".format(accuracy))
-                    return
                 kcnn.train()
 
 if __name__ == "__main__":
